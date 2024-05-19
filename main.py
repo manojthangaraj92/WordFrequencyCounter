@@ -1,12 +1,14 @@
 #!/usr/bin/env python3
 import pandas as pd
-from typing import Dict, List
+from typing import Dict, List, Set
 import os
 import re
 from collections import Counter
 import sqlite3
 from sqlite3 import Connection
 import json
+import nltk
+from nltk.corpus import stopwords
 
 class WordFrequencyCounter:
     """ Class to count the word frequency"""
@@ -65,30 +67,14 @@ class WordFrequencyCounter:
         return records
 
     @staticmethod
-    def sentence_cleaner(sentence:str) -> List[str]:
+    def sentence_cleaner(sentence:str,
+                         common_words:Set[str]={}) -> List[str]:
         """
         This function will remove any emojis, numbers in the integer/float format, convert into lowercases.
 
         @@params sentence: the sentence to be cleaned.
+        @@params common_words: The common words which need not counting.
         """
-        COMMON_WORDS = {
-            'a', 'about', 'above', 'after', 'again', 'against', 'all', 'am', 'an', 'and', 'any', 'are', 'aren\'t', 'as', 
-            'at', 'be', 'because', 'been', 'before', 'being', 'below', 'between', 'both', 'but', 'by', 'can\'t', 'cannot', 
-            'could', 'couldn\'t', 'did', 'didn\'t', 'do', 'does', 'doesn\'t', 'doing', 'don\'t', 'down', 'during', 'each', 
-            'few', 'for', 'from', 'further', 'had', 'hadn\'t', 'has', 'hasn\'t', 'have', 'haven\'t', 'having', 'he', 
-            'he\'d', 'he\'ll', 'he\'s', 'her', 'here', 'here\'s', 'hers', 'herself', 'him', 'himself', 'his', 'how', 
-            'how\'s', 'i', 'i\'d', 'i\'ll', 'i\'m', 'i\'ve', 'if', 'in', 'into', 'is', 'isn\'t', 'it', 'it\'s', 'its', 
-            'itself', 'let\'s', 'me', 'more', 'most', 'mustn\'t', 'my', 'myself', 'no', 'nor', 'not', 'of', 'off', 'on', 
-            'once', 'only', 'or', 'other', 'ought', 'our', 'ours', 'ourselves', 'out', 'over', 'own', 'same', 'shan\'t', 
-            'she', 'she\'d', 'she\'ll', 'she\'s', 'should', 'shouldn\'t', 'so', 'some', 'such', 'than', 'that', 'that\'s', 
-            'the', 'their', 'theirs', 'them', 'themselves', 'then', 'there', 'there\'s', 'these', 'they', 'they\'d', 
-            'they\'ll', 'they\'re', 'they\'ve', 'this', 'those', 'through', 'to', 'too', 'under', 'until', 'up', 'very', 
-            'was', 'wasn\'t', 'we', 'we\'d', 'we\'ll', 'we\'re', 'we\'ve', 'were', 'weren\'t', 'what', 'what\'s', 'when', 
-            'when\'s', 'where', 'where\'s', 'which', 'while', 'who', 'who\'s', 'whom', 'why', 'why\'s', 'with', 'won\'t', 
-            'would', 'wouldn\'t', 'you', 'you\'d', 'you\'ll', 'you\'re', 'you\'ve', 'your', 'yours', 'yourself', 
-            'yourselves'
-        }
-
         # remove the numbers 
         sentence = re.sub(r'\b\d+\.\d+\b\.?|\b\d+\b\.?', '', sentence)
 
@@ -99,7 +85,7 @@ class WordFrequencyCounter:
         sentence = sentence.lower().split()
 
         # filter out common words
-        common_words = [word.lower() for word in COMMON_WORDS]
+        common_words = [word.lower() for word in common_words]
         words = [word for word in sentence if word not in common_words]
 
         return words
@@ -165,12 +151,17 @@ class WordFrequencyCounter:
         return conn
     
     @staticmethod
-    def fectch_db_data(db_name:str,
+    def fecth_db_data(db_name:str,
                        query:str) -> None:
         """
         Fetches the data from the database based on the SQL query provided.
         """
+        # check if the database file exists
+        if not os.path.exists(db_name):
+            raise FileNotFoundError(f'Database file not found: {db_name}')
+        
         # try connect to the database and fetch all the information 
+        conn = None
         try:
             conn = sqlite3.connect(db_name)
             curr = conn.cursor()
@@ -187,13 +178,15 @@ class WordFrequencyCounter:
 
         # close the connection finally
         finally:
-            conn.close()
+            if conn:
+                conn.close()
     
     @staticmethod
     def run(source_folder:str,
             dest_folder:str,
             db_name:str,
-            table_name:str) -> None:
+            table_name:str,
+            common_words:Set[str]) -> None:
         """
         Main function to run. Connects to database, Takes all the csv files in the input directory, process it
         and moves to the processed directory and finally updates the database table.
@@ -225,7 +218,7 @@ class WordFrequencyCounter:
             df = pd.DataFrame(records, columns=fields)
 
             # do the cleaning and frequency counting in the original text field
-            df['word_counts'] = df['original_text'].apply(lambda x: WordFrequencyCounter. sentence_cleaner(x))
+            df['word_counts'] = df['original_text'].apply(lambda x: WordFrequencyCounter. sentence_cleaner(x, common_words))
             df['word_counts'] = df['word_counts'].apply(lambda x: WordFrequencyCounter. word_freq_counter(x))
 
             # move the file to destination folder
@@ -243,18 +236,25 @@ def main():
     processed_folder = "./processed_files" #location of the processed folder
     db_name = "word_frequency.db" # name of the database
     table_name = "word_frequency" # name of the table to create in the database
+
+    # For the common words, either we can use our own set of common words or get the common words
+    # from nltk library
+    nltk.download('stopwords')
+    #get the english stop words
+    COMMON_WORDS = set(stopwords.words('english'))
     
     # Run the application
     WordFrequencyCounter.run(
         source_folder=input_folder, 
         dest_folder=processed_folder, 
         db_name=db_name, 
-        table_name=table_name
+        table_name=table_name,
+        common_words=COMMON_WORDS
         )
     
     # Optional to view the items in the database
     sql_query = f'SELECT * from {table_name}'
-    WordFrequencyCounter.fectch_db_data(db_name=db_name, query=sql_query)
+    WordFrequencyCounter.fecth_db_data(db_name=db_name, query=sql_query)
 
 if __name__ == '__main__':
     main()
