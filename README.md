@@ -2,6 +2,7 @@
 
 This project includes the python script that accepts csv files to be analysed in the folder named **input_files** at the root directory. 
  - Each csv file will have three fields such as **“id”, “source”, “original_text”**. The script analyses the each csv file in the folder, performs word frequency count on the field **original_text**.
+ - The Headers need not be in the CSV file.
  - The results are then stored in a database along with the original fields in the csv file.
  - Finally, the original files are moved to the **processed_files** folder.
 
